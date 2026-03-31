@@ -5,9 +5,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.focusGroup
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,11 +29,15 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import org.jellyfin.androidtv.auth.repository.ServerRepository
 import org.jellyfin.androidtv.auth.repository.SessionRepository
+import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
-import org.jellyfin.androidtv.ui.shared.toolbar.MainToolbar
-import org.jellyfin.androidtv.ui.shared.toolbar.MainToolbarActiveButton
+import org.jellyfin.androidtv.ui.base.colorSchemeForUser
+import org.jellyfin.androidtv.ui.base.shapesForUser
+import org.jellyfin.androidtv.ui.shared.sidebar.SidebarActiveItem
+import org.jellyfin.androidtv.ui.shared.sidebar.SidebarNavigation
 import org.koin.android.ext.android.inject
+import org.koin.compose.koinInject
 
 class HomeFragment : Fragment() {
 	private val sessionRepository by inject<SessionRepository>()
@@ -45,15 +50,23 @@ class HomeFragment : Fragment() {
 		savedInstanceState: Bundle?
 	) = content {
 		val rowsFocusRequester = remember { FocusRequester() }
+		val navBarFocusRequester = remember { FocusRequester() }
 		LaunchedEffect(rowsFocusRequester) { rowsFocusRequester.requestFocus() }
 
-		JellyfinTheme {
-			Column {
-				MainToolbar(MainToolbarActiveButton.Home)
+		val userRepository = koinInject<UserRepository>()
+		val currentUser by userRepository.currentUser.collectAsState()
+		val userName = currentUser?.name
+		val userScheme = colorSchemeForUser(userName)
+		val userShapes = shapesForUser(userName)
 
-				// The leanback code has its own awful focus handling that doesn't work properly with Compose view inteop to workaround this
-				// issue we add custom behavior that only allows focus exit when the current selected row is the first one. Additionally when
-				// we do switch the focus, we reset the leanback state so it won't cause weird behavior when focus is regained
+		JellyfinTheme(colorScheme = userScheme, shapes = userShapes) {
+			Row(modifier = Modifier.fillMaxSize()) {
+				SidebarNavigation(
+					activeItem = SidebarActiveItem.Home,
+					focusRequester = navBarFocusRequester,
+					downFocusTarget = rowsFocusRequester,
+				)
+
 				var rowsSupportFragment by remember { mutableStateOf<HomeRowsFragment?>(null) }
 				AndroidFragment<HomeRowsFragment>(
 					modifier = Modifier
@@ -62,14 +75,15 @@ class HomeFragment : Fragment() {
 						.focusProperties {
 							onExit = {
 								val isFirstRowSelected = rowsSupportFragment?.selectedPosition?.let { it <= 0 } ?: false
-								if (requestedFocusDirection != FocusDirection.Up || !isFirstRowSelected) {
-									cancelFocusChange()
-								} else {
+								if (requestedFocusDirection == FocusDirection.Left && isFirstRowSelected) {
 									rowsSupportFragment?.selectedPosition = 0
 									rowsSupportFragment?.verticalGridView?.clearFocus()
+								} else {
+									cancelFocusChange()
 								}
 							}
 						}
+						.weight(1f)
 						.fillMaxSize(),
 					onUpdate = { fragment ->
 						rowsSupportFragment = fragment

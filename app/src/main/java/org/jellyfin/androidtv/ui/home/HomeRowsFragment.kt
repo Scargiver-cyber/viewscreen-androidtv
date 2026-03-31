@@ -131,7 +131,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					rows.add(helper.loadOnNow())
 				}
 
-				HomeSectionType.NONE -> Unit
+				HomeSectionType.AI_RECOMMENDATIONS -> rows.add(HomeFragmentAiRecommendationsRow(api))
+			HomeSectionType.NONE -> Unit
 			}
 
 			// Add sections to layout

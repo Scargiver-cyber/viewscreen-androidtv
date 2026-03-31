@@ -3,6 +3,7 @@ package org.jellyfin.androidtv.ui.composable.item
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -10,15 +11,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import org.jellyfin.androidtv.R
+import org.jellyfin.androidtv.data.repository.RatingCache
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.constant.WatchedIndicatorBehavior
 import org.jellyfin.androidtv.ui.base.Badge
@@ -33,6 +40,8 @@ import org.jellyfin.playback.jellyfin.queue.baseItem
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.koin.compose.koinInject
+
+private val GoldColor = Color(0xFFFFD700)
 
 @Composable
 @Stable
@@ -54,6 +63,11 @@ fun ItemCardBaseItemOverlay(
 		modifier = Modifier.align(Alignment.TopEnd)
 	)
 
+	RatingIndicator(
+		item = item,
+		modifier = Modifier.align(Alignment.BottomStart),
+	)
+
 	Column(
 		modifier = Modifier.align(Alignment.BottomCenter),
 		verticalArrangement = Arrangement.spacedBy(Tokens.Space.spaceXs)
@@ -63,6 +77,39 @@ fun ItemCardBaseItemOverlay(
 		)
 
 		if (footer != null) footer()
+	}
+}
+
+@Composable
+@Stable
+private fun RatingIndicator(
+	item: BaseItemDto,
+	modifier: Modifier = Modifier,
+) {
+	val communityRating = item.communityRating
+	val ratingCache = koinInject<RatingCache>()
+	var userRating by remember(item.id) { mutableIntStateOf(-1) }
+
+	LaunchedEffect(item.id) {
+		userRating = ratingCache.getRating(item.id) ?: -1
+	}
+
+	if (communityRating == null && userRating < 0) return
+
+	Row(
+		modifier = modifier.padding(bottom = 12.dp),
+		horizontalArrangement = Arrangement.spacedBy(4.dp),
+	) {
+		if (communityRating != null) {
+			Badge {
+				Text(text = "\u2605 %.1f".format(communityRating))
+			}
+		}
+		if (userRating > 0) {
+			Badge(containerColor = GoldColor, contentColor = Color.Black) {
+				Text(text = userRating.toString())
+			}
+		}
 	}
 }
 

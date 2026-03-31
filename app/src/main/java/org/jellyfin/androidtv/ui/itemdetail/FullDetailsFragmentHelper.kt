@@ -1,7 +1,14 @@
 package org.jellyfin.androidtv.ui.itemdetail
 
+import android.app.AlertDialog
 import android.content.ActivityNotFoundException
+import android.graphics.Color
+import android.graphics.Typeface
+import android.view.Gravity
 import android.view.View
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
@@ -12,6 +19,7 @@ import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.data.model.DataRefreshService
 import org.jellyfin.androidtv.data.repository.ItemMutationRepository
 import org.jellyfin.androidtv.data.repository.ItemRepository
+import org.jellyfin.androidtv.data.repository.RatingRepository
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.util.TimeUtils
@@ -395,6 +403,230 @@ fun FullDetailsFragment.getLiveTvChannel(
 			}
 		}.onSuccess { channel ->
 			callback(channel)
+		}
+	}
+}
+
+// --- ViewScreen: Theme Music ---
+
+private val themeMusicPlayers = mutableMapOf<Int, ThemeMusicPlayer>()
+
+fun FullDetailsFragment.startThemeMusic() {
+	val item = mBaseItem ?: return
+	val api by inject<ApiClient>()
+	if (item.type != BaseItemKind.SERIES) return
+
+	val key = System.identityHashCode(this)
+	val player = themeMusicPlayers.getOrPut(key) {
+		ThemeMusicPlayer(api, lifecycleScope)
+	}
+	player.play(item.id)
+}
+
+fun FullDetailsFragment.stopThemeMusic() {
+	val key = System.identityHashCode(this)
+	themeMusicPlayers.remove(key)?.stop()
+}
+
+// --- ViewScreen: Star Ratings (K3ntas Plugin) ---
+
+private val ratingLabels = arrayOf(
+	"", // 0 unused
+	"Weak Sauce",
+	"Terrible",
+	"Bad",
+	"Poor",
+	"Meh",
+	"Fair",
+	"Good",
+	"Great",
+	"Superb",
+	"Totally Ninja"
+)
+
+fun FullDetailsFragment.showRatingDialog() {
+	val ratingRepository by inject<RatingRepository>()
+	val goldColor = Color.parseColor("#FFD700")
+	val emptyColor = Color.parseColor("#555555")
+	val density = resources.displayMetrics.density
+
+	lifecycleScope.launch {
+		val currentRating = ratingRepository.getUserRating(mBaseItem.id)
+		var selectedRating = currentRating ?: 5
+
+		// Build the dialog layout programmatically
+		val container = LinearLayout(requireContext()).apply {
+			orientation = LinearLayout.VERTICAL
+			gravity = Gravity.CENTER_HORIZONTAL
+			setPadding((24 * density).toInt(), (20 * density).toInt(), (24 * density).toInt(), (16 * density).toInt())
+			setBackgroundColor(Color.parseColor("#1A1A1A"))
+		}
+
+		// Title
+		val titleView = TextView(requireContext()).apply {
+			text = "Rate This"
+			setTextColor(Color.WHITE)
+			textSize = 20f
+			typeface = Typeface.DEFAULT_BOLD
+			gravity = Gravity.CENTER
+		}
+		container.addView(titleView)
+
+		// Star row
+		val starRow = LinearLayout(requireContext()).apply {
+			orientation = LinearLayout.HORIZONTAL
+			gravity = Gravity.CENTER
+			val lp = LinearLayout.LayoutParams(
+				LinearLayout.LayoutParams.WRAP_CONTENT,
+				LinearLayout.LayoutParams.WRAP_CONTENT
+			)
+			lp.topMargin = (16 * density).toInt()
+			layoutParams = lp
+		}
+		val starSize = (32 * density).toInt()
+		val starViews = mutableListOf<ImageView>()
+		for (i in 1..10) {
+			val star = ImageView(requireContext()).apply {
+				setImageResource(R.drawable.ic_star)
+				val lp = LinearLayout.LayoutParams(starSize, starSize)
+				lp.marginEnd = (2 * density).toInt()
+				layoutParams = lp
+			}
+			starViews.add(star)
+			starRow.addView(star)
+		}
+		container.addView(starRow)
+
+		// Rating number
+		val numberView = TextView(requireContext()).apply {
+			textSize = 26f
+			typeface = Typeface.DEFAULT_BOLD
+			setTextColor(goldColor)
+			gravity = Gravity.CENTER
+			val lp = LinearLayout.LayoutParams(
+				LinearLayout.LayoutParams.MATCH_PARENT,
+				LinearLayout.LayoutParams.WRAP_CONTENT
+			)
+			lp.topMargin = (12 * density).toInt()
+			layoutParams = lp
+		}
+		container.addView(numberView)
+
+		// Label
+		val labelView = TextView(requireContext()).apply {
+			textSize = 15f
+			setTextColor(Color.parseColor("#AAAAAA"))
+			gravity = Gravity.CENTER
+			val lp = LinearLayout.LayoutParams(
+				LinearLayout.LayoutParams.MATCH_PARENT,
+				LinearLayout.LayoutParams.WRAP_CONTENT
+			)
+			lp.topMargin = (4 * density).toInt()
+			layoutParams = lp
+		}
+		container.addView(labelView)
+
+		// Instructions
+		val instrView = TextView(requireContext()).apply {
+			text = if (currentRating != null)
+				"\u25C0 \u25B6 to change  \u2022  OK to confirm  \u2022  DEL to clear"
+			else
+				"\u25C0 \u25B6 to change  \u2022  OK to confirm"
+			textSize = 11f
+			setTextColor(Color.parseColor("#777777"))
+			gravity = Gravity.CENTER
+			val lp = LinearLayout.LayoutParams(
+				LinearLayout.LayoutParams.MATCH_PARENT,
+				LinearLayout.LayoutParams.WRAP_CONTENT
+			)
+			lp.topMargin = (16 * density).toInt()
+			layoutParams = lp
+		}
+		container.addView(instrView)
+
+		fun updateStars() {
+			for (i in starViews.indices) {
+				starViews[i].setColorFilter(if (i < selectedRating) goldColor else emptyColor)
+			}
+			numberView.text = "$selectedRating / 10"
+			labelView.text = ratingLabels.getOrElse(selectedRating) { "" }
+		}
+		updateStars()
+
+		val dialog = AlertDialog.Builder(requireContext(), R.style.Theme_Jellyfin_Dialog)
+			.setView(container)
+			.create()
+
+		dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+		// Handle D-pad navigation
+		container.isFocusable = true
+		container.isFocusableInTouchMode = true
+		container.setOnKeyListener { _, keyCode, event ->
+			if (event.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+			when (keyCode) {
+				android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+					if (selectedRating > 1) {
+						selectedRating--
+						updateStars()
+					}
+					true
+				}
+				android.view.KeyEvent.KEYCODE_DPAD_RIGHT, android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+					if (selectedRating < 10) {
+						selectedRating++
+						updateStars()
+					}
+					true
+				}
+				android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER -> {
+					dialog.dismiss()
+					submitRating(selectedRating)
+					true
+				}
+				android.view.KeyEvent.KEYCODE_FORWARD_DEL, android.view.KeyEvent.KEYCODE_DEL -> {
+					if (currentRating != null) {
+						dialog.dismiss()
+						clearRating()
+					}
+					true
+				}
+				else -> false
+			}
+		}
+
+		dialog.show()
+		container.requestFocus()
+	}
+}
+
+fun FullDetailsFragment.submitRating(rating: Int) {
+	val ratingRepository by inject<RatingRepository>()
+
+	lifecycleScope.launch {
+		ratingRepository.setRating(mBaseItem.id, rating)
+		rateButton?.setLabel(getString(R.string.lbl_rate_value, rating))
+		Toast.makeText(requireContext(), "Rated $rating/10", Toast.LENGTH_SHORT).show()
+	}
+}
+
+fun FullDetailsFragment.clearRating() {
+	val ratingRepository by inject<RatingRepository>()
+
+	lifecycleScope.launch {
+		ratingRepository.clearRating(mBaseItem.id)
+		rateButton?.setLabel(getString(R.string.lbl_rate))
+		Toast.makeText(requireContext(), "Rating cleared", Toast.LENGTH_SHORT).show()
+	}
+}
+
+fun FullDetailsFragment.loadUserRating() {
+	val ratingRepository by inject<RatingRepository>()
+
+	lifecycleScope.launch {
+		val rating = ratingRepository.getUserRating(mBaseItem.id)
+		if (rating != null) {
+			rateButton?.setLabel(getString(R.string.lbl_rate_value, rating))
 		}
 	}
 }

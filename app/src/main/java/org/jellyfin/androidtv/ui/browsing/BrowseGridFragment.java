@@ -557,7 +557,12 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
             }
         }
 
-        setRowDef(new BrowseRowDef("", BrowsingUtils.createBrowseGridItemsRequest(mFolder), CHUNK_SIZE_MINIMUM, false, true));
+        String genreFilter = getArguments().getString(Extras.Genre, null);
+        if (genreFilter != null) {
+            setRowDef(new BrowseRowDef("", BrowsingUtils.createBrowseGridItemsRequestByGenre(mFolder, genreFilter), CHUNK_SIZE_MINIMUM, false, true));
+        } else {
+            setRowDef(new BrowseRowDef("", BrowsingUtils.createBrowseGridItemsRequest(mFolder), CHUNK_SIZE_MINIMUM, false, true));
+        }
     }
 
     @Override

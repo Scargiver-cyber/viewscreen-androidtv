@@ -29,6 +29,7 @@ import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.screensaver.InAppScreensaver
 import org.jellyfin.androidtv.ui.settings.compat.MainActivitySettings
 import org.jellyfin.androidtv.ui.startup.StartupActivity
+import org.jellyfin.androidtv.ui.NavSoundPlayer
 import org.jellyfin.androidtv.util.applyTheme
 import org.jellyfin.androidtv.util.isMediaSessionKeyEvent
 import org.koin.android.ext.android.inject
@@ -43,6 +44,7 @@ class MainActivity : FragmentActivity() {
 	private val workManager by inject<WorkManager>()
 
 	private lateinit var binding: ActivityMainBinding
+	private lateinit var navSoundPlayer: NavSoundPlayer
 
 	private val backPressedCallback = object : OnBackPressedCallback(false) {
 		override fun handleOnBackPressed() {
@@ -54,6 +56,8 @@ class MainActivity : FragmentActivity() {
 		applyTheme()
 
 		super.onCreate(savedInstanceState)
+
+		navSoundPlayer = NavSoundPlayer(this)
 
 		if (!validateAuthentication()) return
 
@@ -106,6 +110,11 @@ class MainActivity : FragmentActivity() {
 		super.onPause()
 
 		interactionTrackerViewModel.activityPaused = true
+	}
+
+	override fun onDestroy() {
+		super.onDestroy()
+		navSoundPlayer.release()
 	}
 
 	override fun onStop() {
@@ -170,6 +179,9 @@ class MainActivity : FragmentActivity() {
 			interactionTrackerViewModel.notifyInteraction(canCancel = event.action == KeyEvent.ACTION_UP, userInitiated = true)
 			return true
 		}
+
+		// Play nav click sound on D-pad navigation
+		navSoundPlayer.onKeyEvent(event.keyCode, event.action)
 
 		@Suppress("RestrictedApi") // False positive
 		return super.dispatchKeyEvent(event)

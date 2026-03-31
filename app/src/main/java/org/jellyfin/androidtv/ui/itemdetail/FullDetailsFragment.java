@@ -227,6 +227,9 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
     public void onResume() {
         super.onResume();
 
+        // ViewScreen: Theme music for series
+        FullDetailsFragmentHelperKt.startThemeMusic(this);
+
         ClockBehavior clockBehavior = userPreferences.getValue().get(UserPreferences.Companion.getClockBehavior());
         if (clockBehavior == ClockBehavior.ALWAYS || clockBehavior == ClockBehavior.IN_MENUS) {
             startClock();
@@ -282,6 +285,8 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
     public void onPause() {
         super.onPause();
         stopClock();
+        // ViewScreen: Stop theme music
+        FullDetailsFragmentHelperKt.stopThemeMusic(this);
     }
 
     @Override
@@ -755,6 +760,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
     }
 
     TextUnderButton favButton = null;
+    TextUnderButton rateButton = null;
     TextUnderButton shuffleButton = null;
     TextUnderButton goToSeriesButton = null;
     TextUnderButton queueButton = null;
@@ -975,6 +981,16 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
             });
             favButton.setActivated(userData.isFavorite());
             mDetailsOverviewRow.addAction(favButton);
+
+            // Rate (ViewScreen - K3ntas plugin)
+            rateButton = TextUnderButton.create(requireContext(), R.drawable.ic_star, buttonSize, 1, getString(R.string.lbl_rate), new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    FullDetailsFragmentHelperKt.showRatingDialog(FullDetailsFragment.this);
+                }
+            });
+            mDetailsOverviewRow.addAction(rateButton);
+            FullDetailsFragmentHelperKt.loadUserRating(FullDetailsFragment.this);
         }
 
         if (mBaseItem.getType() == BaseItemKind.EPISODE && mBaseItem.getSeriesId() != null) {

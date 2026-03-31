@@ -302,4 +302,12 @@ object BrowsingUtils {
 
 		return baseRequest
 	}
+
+	@JvmStatic
+	fun createBrowseGridItemsRequestByGenre(parent: BaseItemDto, genre: String): GetItemsRequest {
+		return createBrowseGridItemsRequest(parent).copy(
+			genres = setOf(genre),
+			recursive = true,
+		)
+	}
 }
