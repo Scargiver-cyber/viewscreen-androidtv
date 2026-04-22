@@ -107,6 +107,22 @@ fun FullDetailsFragment.showDetailsMenu(
 	if (goToSeriesButton?.isVisible == false) {
 		item(getString(R.string.lbl_goto_series)) { gotoSeries() }
 	}
+
+	// Delete — always offered; Jellyfin server enforces permissions and
+	// deleteItem() toasts on failure. Confirm dialog gates the destructive action.
+	item(getString(R.string.lbl_delete)) {
+		val api by inject<ApiClient>()
+		val dataRefreshService by inject<DataRefreshService>()
+		val navigationRepository by inject<NavigationRepository>()
+		AlertDialog.Builder(requireContext())
+			.setTitle(getString(R.string.item_delete_confirm_title))
+			.setMessage(getString(R.string.item_delete_confirm_message))
+			.setPositiveButton(getString(R.string.lbl_delete)) { _, _ ->
+				deleteItem(api, baseItemDto, dataRefreshService, navigationRepository)
+			}
+			.setNegativeButton(android.R.string.cancel, null)
+			.show()
+	}
 }.showIfNotEmpty()
 
 fun FullDetailsFragment.createFakeSeriesTimerBaseItemDto(timer: SeriesTimerInfoDto) = BaseItemDto(
@@ -429,6 +445,16 @@ fun FullDetailsFragment.stopThemeMusic() {
 }
 
 // --- ViewScreen: Star Ratings (K3ntas Plugin) ---
+//
+// UI shows a 5-star picker, but Jellyfin storage stays on its native 0–10 scale
+// so ratings remain compatible with the Jellyfin web UI and other clients.
+// Each displayed star = 2 internal points. Labels are indexed by the 0–10
+// storage value so every nuance still has a word (rating 6 = "Fair",
+// rating 7 = "Good") — the 5-star picker snaps to even rungs (2, 4, 6, 8, 10).
+
+private const val VS_UI_STARS = 5
+private const val VS_STORAGE_MAX = 10
+private const val VS_STORAGE_STEP = VS_STORAGE_MAX / VS_UI_STARS  // = 2
 
 private val ratingLabels = arrayOf(
 	"", // 0 unused
@@ -452,7 +478,14 @@ fun FullDetailsFragment.showRatingDialog() {
 
 	lifecycleScope.launch {
 		val currentRating = ratingRepository.getUserRating(mBaseItem.id)
-		var selectedRating = currentRating ?: 5
+		// Default new ratings to 3 stars (= storage 6 on 0-10 scale).
+		// Round pre-existing odd ratings up to the nearest even rung so the UI
+		// picker has a valid snap-to value.
+		var selectedRating = when {
+			currentRating == null -> 6
+			currentRating % VS_STORAGE_STEP != 0 -> ((currentRating / VS_STORAGE_STEP) + 1) * VS_STORAGE_STEP
+			else -> currentRating
+		}.coerceIn(VS_STORAGE_STEP, VS_STORAGE_MAX)
 
 		// Build the dialog layout programmatically
 		val container = LinearLayout(requireContext()).apply {
@@ -483,13 +516,13 @@ fun FullDetailsFragment.showRatingDialog() {
 			lp.topMargin = (16 * density).toInt()
 			layoutParams = lp
 		}
-		val starSize = (32 * density).toInt()
+		val starSize = (48 * density).toInt()  // larger since we only show 5
 		val starViews = mutableListOf<ImageView>()
-		for (i in 1..10) {
+		for (i in 1..VS_UI_STARS) {
 			val star = ImageView(requireContext()).apply {
 				setImageResource(R.drawable.ic_star)
 				val lp = LinearLayout.LayoutParams(starSize, starSize)
-				lp.marginEnd = (2 * density).toInt()
+				lp.marginEnd = (6 * density).toInt()
 				layoutParams = lp
 			}
 			starViews.add(star)
@@ -545,10 +578,11 @@ fun FullDetailsFragment.showRatingDialog() {
 		container.addView(instrView)
 
 		fun updateStars() {
+			val starsLit = selectedRating / VS_STORAGE_STEP
 			for (i in starViews.indices) {
-				starViews[i].setColorFilter(if (i < selectedRating) goldColor else emptyColor)
+				starViews[i].setColorFilter(if (i < starsLit) goldColor else emptyColor)
 			}
-			numberView.text = "$selectedRating / 10"
+			numberView.text = "$starsLit / $VS_UI_STARS"
 			labelView.text = ratingLabels.getOrElse(selectedRating) { "" }
 		}
 		updateStars()
@@ -566,15 +600,15 @@ fun FullDetailsFragment.showRatingDialog() {
 			if (event.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener false
 			when (keyCode) {
 				android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
-					if (selectedRating > 1) {
-						selectedRating--
+					if (selectedRating > VS_STORAGE_STEP) {
+						selectedRating -= VS_STORAGE_STEP
 						updateStars()
 					}
 					true
 				}
 				android.view.KeyEvent.KEYCODE_DPAD_RIGHT, android.view.KeyEvent.KEYCODE_DPAD_UP -> {
-					if (selectedRating < 10) {
-						selectedRating++
+					if (selectedRating < VS_STORAGE_MAX) {
+						selectedRating += VS_STORAGE_STEP
 						updateStars()
 					}
 					true
