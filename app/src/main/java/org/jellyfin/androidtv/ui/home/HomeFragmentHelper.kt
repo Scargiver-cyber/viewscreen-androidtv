@@ -76,6 +76,10 @@ class HomeFragmentHelper(
 		return HomeFragmentBrowseRowDefRow(BrowseRowDef(context.getString(R.string.lbl_on_now), query))
 	}
 
+	fun loadTvShows(): HomeFragmentRow {
+		return HomeFragmentTvShowsRow()
+	}
+
 	companion object {
 		// Maximum amount of items loaded for a row
 		private const val ITEM_LIMIT_RESUME = 50

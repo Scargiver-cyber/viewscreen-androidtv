@@ -132,7 +132,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 
 				HomeSectionType.AI_RECOMMENDATIONS -> rows.add(HomeFragmentAiRecommendationsRow(api))
-			HomeSectionType.NONE -> Unit
+				HomeSectionType.TV_SHOWS -> rows.add(helper.loadTvShows())
+				HomeSectionType.NONE -> Unit
 			}
 
 			// Add sections to layout

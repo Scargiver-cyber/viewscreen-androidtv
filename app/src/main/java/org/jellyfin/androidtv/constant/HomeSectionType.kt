@@ -22,5 +22,6 @@ enum class HomeSectionType(
 	NEXT_UP("nextup", R.string.home_section_next_up),
 	LIVE_TV("livetv", R.string.home_section_livetv),
 	AI_RECOMMENDATIONS("airecommendations", R.string.home_section_ai_recommendations),
+	TV_SHOWS("tvshows", R.string.home_section_tv_shows),
 	NONE("none", R.string.home_section_none),
 }
