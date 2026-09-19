@@ -1,12 +1,18 @@
 package org.jellyfin.androidtv.ui.itemhandling
 
 import android.content.Context
+import android.os.Build
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.constant.LiveTvOption
 import org.jellyfin.androidtv.data.querying.GetAdditionalPartsRequest
@@ -42,6 +48,50 @@ import org.jellyfin.sdk.model.api.request.GetSimilarItemsRequest
 import org.jellyfin.sdk.model.api.request.GetUpcomingEpisodesRequest
 import timber.log.Timber
 import kotlin.math.min
+
+// Some servers/networks intermittently drop larger responses (seen: SocketException /
+// TimeoutException on library browse queries that return many items). A transient failure
+// here shouldn't leave the user staring at an empty grid — retry a few times with backoff
+// before giving up. See vault 04_Homelab/Network Topology.md Incident Log 2026-09-19.
+private suspend fun <T> retryIO(times: Int = 3, initialDelayMs: Long = 500, block: suspend () -> T): T {
+	var lastException: Exception? = null
+	repeat(times) { attempt ->
+		try {
+			return block()
+		} catch (e: Exception) {
+			lastException = e
+			Timber.w(e, "retryIO: attempt ${attempt + 1}/$times failed")
+			if (attempt < times - 1) delay(initialDelayMs * (attempt + 1))
+		}
+	}
+	throw lastException ?: IllegalStateException("retryIO failed with no exception recorded")
+}
+
+// Best-effort, fire-and-forget report to Holodeck when a real fetch gives up after all
+// retries. Never blocks the caller and any failure here is silently ignored -- this is
+// purely so we (server-side) find out a user actually hit this, since the server itself
+// can't detect it (nginx access logs show 100% success -- the failure is client-only).
+private val failureReportClient by lazy {
+	OkHttpClient.Builder()
+		.callTimeout(java.time.Duration.ofSeconds(5))
+		.build()
+}
+
+private fun reportItemFetchFailureAsync(api: ApiClient, detail: String) {
+	val baseUrl = api.baseUrl?.trimEnd('/') ?: return
+	ProcessLifecycleOwner.get().lifecycleScope.launch(Dispatchers.IO) {
+		try {
+			val json = """{"detail":"${detail.take(180).replace("\"", "'")}","device":"${Build.MODEL}"}"""
+			val request = Request.Builder()
+				.url("$baseUrl/viewscreen-item-fetch-failed")
+				.post(json.toRequestBody("application/json".toMediaType()))
+				.build()
+			failureReportClient.newCall(request).execute().close()
+		} catch (e: Exception) {
+			Timber.d(e, "reportItemFetchFailureAsync: report itself failed, ignoring")
+		}
+	}
+}
 
 fun <T : Any> ItemRowAdapter.setItems(
 	items: Collection<T>,
@@ -567,12 +617,14 @@ fun ItemRowAdapter.retrieveItems(
 	ProcessLifecycleOwner.get().lifecycleScope.launch {
 		runCatching {
 			val response = withContext(Dispatchers.IO) {
-				api.itemsApi.getItems(
-					query.copy(
-						startIndex = startIndex,
-						limit = batchSize,
-					)
-				).content
+				retryIO {
+					api.itemsApi.getItems(
+						query.copy(
+							startIndex = startIndex,
+							limit = batchSize,
+						)
+					).content
+				}
 			}
 
 			totalItems = response.totalRecordCount
@@ -590,7 +642,10 @@ fun ItemRowAdapter.retrieveItems(
 			if (itemsLoaded == 0) removeRow()
 		}.fold(
 			onSuccess = { notifyRetrieveFinished() },
-			onFailure = { error -> notifyRetrieveFinished(error as? Exception) }
+			onFailure = { error ->
+				reportItemFetchFailureAsync(api, error.message ?: error.toString())
+				notifyRetrieveFinished(error as? Exception)
+			}
 		)
 	}
 }
