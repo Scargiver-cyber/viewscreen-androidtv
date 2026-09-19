@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -13,7 +14,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.fragment.app.Fragment
 import androidx.fragment.compose.AndroidFragment
@@ -31,6 +34,8 @@ import org.jellyfin.androidtv.data.repository.NotificationsRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.colorSchemeForUser
 import org.jellyfin.androidtv.ui.base.shapesForUser
+import org.jellyfin.androidtv.ui.shared.sidebar.SidebarActiveItem
+import org.jellyfin.androidtv.ui.shared.sidebar.SidebarNavigation
 import org.koin.android.ext.android.inject
 import org.koin.compose.koinInject
 
@@ -55,16 +60,36 @@ class HomeFragment : Fragment() {
 		val userShapes = shapesForUser(userName)
 
 		JellyfinTheme(colorScheme = userScheme, shapes = userShapes) {
-			var rowsSupportFragment by remember { mutableStateOf<HomeRowsFragment?>(null) }
-			AndroidFragment<HomeRowsFragment>(
-				modifier = Modifier
-					.focusGroup()
-					.focusRequester(rowsFocusRequester)
-					.fillMaxSize(),
-				onUpdate = { fragment ->
-					rowsSupportFragment = fragment
-				}
-			)
+			Row(modifier = Modifier.fillMaxSize()) {
+				SidebarNavigation(
+					activeItem = SidebarActiveItem.Home,
+					focusRequester = navBarFocusRequester,
+					downFocusTarget = rowsFocusRequester,
+				)
+
+				var rowsSupportFragment by remember { mutableStateOf<HomeRowsFragment?>(null) }
+				AndroidFragment<HomeRowsFragment>(
+					modifier = Modifier
+						.focusGroup()
+						.focusRequester(rowsFocusRequester)
+						.focusProperties {
+							onExit = {
+								val isFirstRowSelected = rowsSupportFragment?.selectedPosition?.let { it <= 0 } ?: false
+								if (requestedFocusDirection == FocusDirection.Left && isFirstRowSelected) {
+									rowsSupportFragment?.selectedPosition = 0
+									rowsSupportFragment?.verticalGridView?.clearFocus()
+								} else {
+									cancelFocusChange()
+								}
+							}
+						}
+						.weight(1f)
+						.fillMaxSize(),
+					onUpdate = { fragment ->
+						rowsSupportFragment = fragment
+					}
+				)
+			}
 		}
 	}
 
